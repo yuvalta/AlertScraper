@@ -1,11 +1,11 @@
 import urllib.request
-
 import pika
-
+from flask import Flask
 from AssetMetaData import Asset
 from time import time
-
 from bs4 import BeautifulSoup
+
+app = Flask(__name__)
 
 headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
                          'AppleWebKit/537.11 (KHTML, like Gecko) '
@@ -17,6 +17,19 @@ headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
            'Connection': 'keep-alive'}
 
 PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount"
+
+
+@app.route('/')
+def hello_world():
+    asset_from_queue = Asset('https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150',
+                             ["1", "2", "3"])
+
+    print(asset_from_queue.to_json())
+
+    asset_updated = scrape_asset_data(asset_from_queue)
+    # push_to_queue(asset_updated)
+
+    return asset_from_queue.to_json()
 
 
 def scrape_asset_data(asset_from_queue):
@@ -46,13 +59,3 @@ def push_to_queue(asset):
                           routing_key='assets_Q',
                           body=asset.to_json())
     print(" [x] Sent 'Hello World!'")
-
-
-if __name__ == '__main__':
-    asset_from_queue = Asset('https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150',
-                             ["1", "2", "3"])
-
-    print(asset_from_queue.to_json())
-
-    asset_updated = scrape_asset_data(asset_from_queue)
-    push_to_queue(asset_updated)
