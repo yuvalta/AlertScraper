@@ -1,6 +1,6 @@
 import urllib.request
 import pika
-from flask import Flask
+from flask import Flask, request
 from AssetMetaData import Asset
 from time import time
 from bs4 import BeautifulSoup
@@ -19,9 +19,13 @@ headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
 PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount"
 
 
-@app.route('/')
-def hello_world():
-    asset_from_queue = Asset('https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150',
+@app.route('/', methods=['POST'])
+def get_price():
+    # asset_from_queue = Asset('https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150',
+    #                          ["1", "2", "3"])
+    asset_url = request.form["url"]
+    print(asset_url)
+    asset_from_queue = Asset("https://opensea.io/assets/" + asset_url,
                              ["1", "2", "3"])
 
     print(asset_from_queue.to_json())
