@@ -5,6 +5,7 @@ class Asset:
     url = None
     users_list = None
     price = None
+    error_message = None
 
     def __init__(self, url, user_list):
         self.url = url

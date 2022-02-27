@@ -1,9 +1,13 @@
+import os
+import sys
+import threading
 import urllib.request
+import logging
 import pika
-from flask import Flask, request
-from AssetMetaData import Asset
-from time import time
 from bs4 import BeautifulSoup
+from flask import Flask, request
+
+from AssetMetaData import Asset
 
 app = Flask(__name__)
 
@@ -21,34 +25,36 @@ PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount
 
 @app.route('/', methods=['POST'])
 def get_price():
-    # asset_from_queue = Asset('https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150',
-    #                          ["1", "2", "3"])
+    # https://opensea.io/assets/0x99ecdf17ded4fcb6c5f0fe280d21f832af464f67/150
+
     asset_url = request.form["url"]
-    print(asset_url)
     asset_from_queue = Asset("https://opensea.io/assets/" + asset_url,
                              ["1", "2", "3"])
 
     print(asset_from_queue.to_json())
 
-    asset_updated = scrape_asset_data(asset_from_queue)
-    # push_to_queue(asset_updated)
+    threading.Thread(target=scrape_asset_data, args=(asset_from_queue,)).start()
+    # response = scrape_asset_data(asset_from_queue)
 
-    return asset_from_queue.to_json()
+    return "Started!"
 
 
 def scrape_asset_data(asset_from_queue):
     # start = time()
 
-    req = urllib.request.Request(url=asset_from_queue.url, headers=headers)
-    page = urllib.request.urlopen(req).read()
+    try:
+        req = urllib.request.Request(url=asset_from_queue.url, headers=headers)
+        page = urllib.request.urlopen(req).read()
 
-    soup = BeautifulSoup(page, features="html.parser")
+        soup = BeautifulSoup(page, features="html.parser")
 
-    asset_from_queue.price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
+        asset_from_queue.price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
+    except Exception as e:
+        asset_from_queue.error_message = str(e)
+        return "No Asset Price", 400
 
-    print(asset_from_queue.to_json())
-
-    return asset_from_queue
+    # push_to_queue(asset_from_queue)
+    app.logger.info("Current asset price is " + asset_from_queue.price)
 
     # print(f'It took {time() - start} seconds!')
 
@@ -62,4 +68,8 @@ def push_to_queue(asset):
     channel.basic_publish(exchange='',
                           routing_key='assets_Q',
                           body=asset.to_json())
-    print(" [x] Sent 'Hello World!'")
+    return "[x] Sent 'Hello World!'"
+
+
+port = os.environ.get("PORT", 5000)
+app.run(debug=True, host="0.0.0.0", port=port)

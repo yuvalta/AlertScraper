@@ -7,3 +7,7 @@ run:
 stop:
 	docker stop alert-tracker-container; docker rm alert-tracker-container; docker rmi alert-tracker
 
+restart: stop build run
+
+exec:
+	docker exec -it alert-tracker-container /bin/bash
