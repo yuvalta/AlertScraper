@@ -9,17 +9,16 @@ print(url)
 params = pika.URLParameters(url)
 connection = pika.BlockingConnection(params)
 channel = connection.channel()  # start a channel
-channel.queue_declare(queue='hello')  # Declare a queue
+channel.queue_declare(queue='scrape_results')  # Declare a queue
 
 
 def callback(ch, method, properties, body):
     print(" [x] Received " + str(body))
 
 
-channel.basic_consume('hello',
+channel.basic_consume('scrape_results',
                       callback,
                       auto_ack=True)
 
-print(' [*] Waiting for messages:')
 channel.start_consuming()
 connection.close()
