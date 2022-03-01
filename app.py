@@ -1,13 +1,15 @@
 import os
-import sys
 import threading
 import urllib.request
-import logging
+
 import pika
 from bs4 import BeautifulSoup
 from flask import Flask, request
+from dotenv import load_dotenv
 
 from AssetMetaData import Asset
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -53,22 +55,27 @@ def scrape_asset_data(asset_from_queue):
         asset_from_queue.error_message = str(e)
         return "No Asset Price", 400
 
-    # push_to_queue(asset_from_queue)
     app.logger.info("Current asset price is " + asset_from_queue.price)
+    push_to_queue(asset_from_queue)
 
     # print(f'It took {time() - start} seconds!')
 
 
 def push_to_queue(asset):
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    channel = connection.channel()
+    url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))
 
-    channel.queue_declare(queue='assets_Q')
-
+    params = pika.URLParameters(url)
+    connection = pika.BlockingConnection(params)
+    channel = connection.channel()  # start a channel
+    channel.queue_declare(queue='hello')  # Declare a queue
     channel.basic_publish(exchange='',
-                          routing_key='assets_Q',
-                          body=asset.to_json())
-    return "[x] Sent 'Hello World!'"
+                          routing_key='hello',
+                          body='Hello CloudAMQP!')
+
+    print(" [x] Sent 'Hello World!'")
+    connection.close()
+
+    app.logger.info("Sent: " + asset.to_json())
 
 
 port = os.environ.get("PORT", 5000)
