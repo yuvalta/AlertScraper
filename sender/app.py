@@ -44,7 +44,7 @@ def get_price():
 def scrape_asset_data(asset_from_queue):
     start = time()
     try:
-        req = urllib.request.Request(url=asset_from_queue.url, headers=headers)
+        req = urllib.request.Request(url=asset_from_queue.rabbitmq_url, headers=headers)
         page = urllib.request.urlopen(req).read()
 
         soup = BeautifulSoup(page, features="html.parser")
@@ -60,9 +60,9 @@ def scrape_asset_data(asset_from_queue):
 
 
 def push_to_queue(asset):
-    url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))
+    rabbitmq_url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))
 
-    params = pika.URLParameters(url)
+    params = pika.URLParameters(rabbitmq_url)
     connection = pika.BlockingConnection(params)
     channel = connection.channel()  # start a channel
     channel.queue_declare(queue='scrape_results')  # Declare a queue
