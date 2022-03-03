@@ -44,7 +44,7 @@ def get_price():
 def scrape_asset_data(asset_from_queue):
     start = time()
     try:
-        req = urllib.request.Request(url=asset_from_queue.rabbitmq_url, headers=headers)
+        req = urllib.request.Request(url=asset_from_queue.url, headers=headers)
         page = urllib.request.urlopen(req).read()
 
         soup = BeautifulSoup(page, features="html.parser")
