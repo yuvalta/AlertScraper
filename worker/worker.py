@@ -7,19 +7,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def add_asset_to_mongodb(asset):
-    uri = str(os.environ.get('MONGODB_URI'))
-    client = MongoClient(uri)
-    db = client["AlertNFT"]
-    col = db["AssetsCol"]
-
-    # insert = {"price": asset}
-    col.insert_one(asset)
+# def add_asset_to_mongodb(asset):
+#     uri = str(os.environ.get('MONGODB_URI'))
+#     client = MongoClient(uri)
+#     db = client["AlertNFT"]
+#     col = db["AssetsCol"]
+#
+#     col.insert_one(asset)
 
 
 def callback(ch, method, properties, body):
-    add_asset_to_mongodb(json.loads(str(body, 'utf-8')))
-    # add_asset_to_mongodb(json.loads(base64.b64decode(str(body, 'utf-8'))))
+    pass
+    # add_asset_to_mongodb(json.loads(str(body, 'utf-8')))
 
 
 rabbitmq_url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))
