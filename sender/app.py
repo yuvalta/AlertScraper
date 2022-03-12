@@ -82,7 +82,7 @@ def add_user_to_asset(asset_url, user):
 
 def add_new_asset(col, new_asset):
     app.logger.info("add_new_asset: " + new_asset.to_json())
-    col.insert_one(new_asset.to_json())
+    col.insert_one(new_asset.__dict__)
 
 
 def scrape_asset_data(asset_from_queue):
