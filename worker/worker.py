@@ -1,24 +1,21 @@
 import json
-import pika, os
-import base64
-from pymongo import MongoClient
+
+import os
+import pika
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-# def add_asset_to_mongodb(asset):
-#     uri = str(os.environ.get('MONGODB_URI'))
-#     client = MongoClient(uri)
-#     db = client["AlertNFT"]
-#     col = db["AssetsCol"]
-#
-#     col.insert_one(asset)
+def check_and_notify(param):
+    # print the keys and values
+    for key in param:
+        value = param[key]
+        print("The key and value are ({}) = ({})".format(key, value))
 
 
 def callback(ch, method, properties, body):
-    pass
-    # add_asset_to_mongodb(json.loads(str(body, 'utf-8')))
+    check_and_notify(json.loads(str(body, 'utf-8')))
 
 
 rabbitmq_url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))

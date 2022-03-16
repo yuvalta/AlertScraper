@@ -6,6 +6,7 @@ class Asset:
     users = []
     price = None
     error_message = None
+    need_to_notify = False
 
     def __init__(self, url):
         self.url = url
