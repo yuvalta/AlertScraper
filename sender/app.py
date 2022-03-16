@@ -10,20 +10,13 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, request
 
+from consts import PRICE_CLASS, HEADERS, URL_PREFIX
+
 load_dotenv()
 
 app = Flask(__name__)
 
-headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
-                         'AppleWebKit/537.11 (KHTML, like Gecko) '
-                         'Chrome/23.0.1271.64 Safari/537.11',
-           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-           'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
-           'Accept-Encoding': 'none',
-           'Accept-Language': 'en-US,en;q=0.8',
-           'Connection': 'keep-alive'}
-
-PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount"
+loop_flag = True
 
 
 # when user adding new asset from UI
@@ -31,27 +24,64 @@ PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount
 def upsert_asset():
     # TODO: validate args
     asset_url = request.form["url"]
-    user_phone = request.form["user_phone"]
+    user_phone = request.form["user_email"]
 
     app.logger.info("upsert_asset() %s %s", asset_url, user_phone)
 
     return add_user_to_asset(asset_url, user_phone)
 
+#
+# # happens every x seconds from db
+# @app.route('/', methods=['POST'])
+# def get_price_external():
+#     asset_url = request.form["url"]
+#
+#     get_price_internal(Asset(asset_url, "", "", "", False))
+#
+#     return "Started!"
 
-# happens every x seconds from db
-@app.route('/', methods=['POST'])
-def get_price_external():
-    asset_url = request.form["url"]
 
-    get_price_internal(Asset(asset_url))
+# start loop
+@app.route('/start/', methods=['GET'])
+def start():
+    app.logger.info("start looping")
+    global loop_flag
 
-    return "Started!"
+    try:
+        while loop_flag:
+            mapped_assets_list = []
+            col = MongodbConnection.get_instance()
+            full_assets_list = col.find({})
+            for asset in full_assets_list:
+                asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
+                                      asset["need_to_notify"])
+                mapped_assets_list.append(asset_from_db)
+
+            app.logger.info("scraping " + str(len(mapped_assets_list)) + " assets")
+            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_asset,)) for mapped_asset in
+                       mapped_assets_list]
+
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+
+            app.logger.info("finished loop, sleeping...")
+            time.sleep(30)
+
+    except Exception as e:
+        app.logger.info(str(e))
+
+    return "Finished loop!"
 
 
-def get_price_internal(asset_from_db):
-    app.logger.info("get_price_internal()")
+# start loop
+@app.route('/stop/', methods=['GET'])
+def stop():
+    app.logger.info("stop looping")
 
-    threading.Thread(target=scrape_asset_data, args=(asset_from_db,)).start()
+    global loop_flag
+    loop_flag = False
+
+    return "Stopped!"
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
@@ -68,10 +98,12 @@ def add_user_to_asset(asset_url, user):
 
         if retrieved_asset_from_db is None:
             app.logger.info("added new user")
-            add_new_asset(col, Asset(asset_url, user, "", ""))
+            new_asset_user_list = [user]
+            add_new_asset(col, Asset(asset_url, new_asset_user_list, "", "", False))
+            return "added new user"
         else:
             app.logger.info("updating existing asset")
-            new_user_list = list(retrieved_asset_from_db["users"].split(","))
+            new_user_list = list(retrieved_asset_from_db["users"])
 
             if len(new_user_list) > 20:
                 error_msg = "Too much users on this url"
@@ -82,6 +114,7 @@ def add_user_to_asset(asset_url, user):
 
             new_values = {"$set": {"users": new_user_list}}
             col.update_one(asset_query, new_values)
+            return "updating existing asset"
 
     except Exception as e:
         app.logger.info(str(e))
@@ -94,9 +127,9 @@ def add_new_asset(col, new_asset):
 
 
 def scrape_asset_data(asset_from_queue):
-    start = time()
     try:
-        req = urllib.request.Request(url=asset_from_queue.url, headers=headers)
+        full_url = URL_PREFIX + asset_from_queue.url
+        req = urllib.request.Request(url=full_url, headers=HEADERS)
         page = urllib.request.urlopen(req).read()
 
         soup = BeautifulSoup(page, features="html.parser")
@@ -107,6 +140,15 @@ def scrape_asset_data(asset_from_queue):
         if new_price != asset_from_queue.price:
             asset_from_queue.price = new_price
             asset_from_queue.need_to_notify = True
+
+            # split to update function
+            asset_query = {"url": asset_from_queue.url}
+            new_values = {"$set": {"price": new_price}}
+
+            col = MongodbConnection.get_instance()
+            col.update_one(asset_query, new_values)
+
+            push_to_queue(asset_from_queue)
         else:
             asset_from_queue.need_to_notify = False
 
@@ -115,17 +157,17 @@ def scrape_asset_data(asset_from_queue):
     except Exception as e:
         asset_from_queue.error_message = str(e)
 
-    app.logger.info("Current asset is " + asset_from_queue.to_json())
-    push_to_queue(asset_from_queue)
-
-    app.logger.info(f'It took {time() - start} seconds!')
-
 
 def push_to_queue(asset):
     rabbitmq_url = str(os.environ.get('STACKHERO_RABBITMQ_AMQP_URL_TLS'))
 
     params = pika.URLParameters(rabbitmq_url)
-    connection = pika.BlockingConnection(params)
+    try:
+        connection = pika.BlockingConnection(params)
+    except Exception as e:
+        app.logger.info("Error in BlockingConnection: " + str(e))
+        return
+
     channel = connection.channel()  # start a channel
     channel.queue_declare(queue='scrape_results')  # Declare a queue
     channel.basic_publish(exchange='',
@@ -138,21 +180,3 @@ def push_to_queue(asset):
 
 port = os.environ.get("PORT", 5000)
 app.run(debug=True, host="0.0.0.0", port=port)
-
-try:
-    while True:
-        col = MongodbConnection.get_instance()
-        full_assets_list = col.find({})
-        for asset in full_assets_list:
-            app.logger.info("asset: " + asset.to_json())
-            get_price_internal(asset)
-
-        time.sleep(10)
-
-
-except Exception as e:
-    app.logger.info(str(e))
-
-# TODO: why do i need flask? why not just get assets from db and loop on them?
-# TODO: and a web ui for entering and validating urls and users to db
-# TODO: maybe split into 2 dbs and once in a while compare it
