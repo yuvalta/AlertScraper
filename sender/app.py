@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import time
@@ -91,9 +92,14 @@ def get_assets_for_user():
     user_email = request.args.get("user_email")
 
     col = MongodbConnection.get_instance()
-
     asset_query = {"users": user_email}
-    return col.find(asset_query)
+
+    cursor = col.find(asset_query)
+    assets_list = []
+    for asset in cursor:
+        assets_list.append("https://opensea.io/assets/" + asset["url"])
+
+    return json.dumps(assets_list)
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
