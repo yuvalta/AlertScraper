@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from flask import Flask, request
 
 from consts import PRICE_CLASS, HEADERS, URL_PREFIX
+from flask_cors import cross_origin
 
 load_dotenv()
 
@@ -87,6 +88,7 @@ def stop():
 
 
 @app.route('/get_assets_for_user/')
+@cross_origin()
 def get_assets_for_user():
     app.logger.info("get_assets_for_user")
     user_email = request.args.get("user_email")
