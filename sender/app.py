@@ -30,6 +30,7 @@ def upsert_asset():
 
     return add_user_to_asset(asset_url, user_phone)
 
+
 #
 # # happens every x seconds from db
 # @app.route('/', methods=['POST'])
@@ -82,6 +83,17 @@ def stop():
     loop_flag = False
 
     return "Stopped!"
+
+
+@app.route('/get_assets_for_user/')
+def get_assets_for_user():
+    app.logger.info("get_assets_for_user")
+    user_email = request.args.get("user_email")
+
+    col = MongodbConnection.get_instance()
+
+    asset_query = {"users": user_email}
+    return col.find(asset_query)
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
