@@ -12,17 +12,20 @@ from dotenv import load_dotenv
 from flask import Flask, request
 
 from consts import PRICE_CLASS, HEADERS, URL_PREFIX
-from flask_cors import cross_origin
+from flask_cors import cross_origin, CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+
+cors = CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 
 loop_flag = True
 
 
 # when user adding new asset from UI
 @app.route('/upsert_asset/', methods=['POST'])
+@cross_origin()
 def upsert_asset():
     # TODO: validate args
     asset_url = request.form["url"]
@@ -92,8 +95,10 @@ def stop():
 def get_assets_for_user():
     app.logger.info("get_assets_for_user")
     user_email = request.args.get("user_email")
+    app.logger.info(user_email)
 
     col = MongodbConnection.get_instance()
+    app.logger.info(col)
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)

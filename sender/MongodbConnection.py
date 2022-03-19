@@ -7,7 +7,7 @@ class MongodbConnection:
 
     @staticmethod
     def get_instance():
-        if MongodbConnection.__instance == None:
+        if MongodbConnection.__instance is None:
             MongodbConnection()
         return MongodbConnection.__instance
 
@@ -17,5 +17,5 @@ class MongodbConnection:
             client = MongoClient(uri)
             db = client["AlertNFT"]
             MongodbConnection.__instance = db["AssetsCol"]
-        except:
-            print("Error in connection to db")
+        except Exception as e:
+            print("Error in connection to db: " + str(e))
