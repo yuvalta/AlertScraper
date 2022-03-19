@@ -18,7 +18,14 @@ load_dotenv()
 
 app = Flask(__name__)
 
-cors = CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
+# cors = CORS(app, resources={r"/*": {"origins": ["http://localhost:3000",
+#                                                 "http://yuvalta.github.io/*",
+#                                                 "https://yuvalta.github.io/*",
+#                                                 "http://yuvalta.github.io",
+#                                                 "https://yuvalta.github.io"]}})
+
+CORS(app)
+
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 loop_flag = True
@@ -26,7 +33,7 @@ loop_flag = True
 
 # when user adding new asset from UI
 @app.route('/upsert_asset/', methods=['POST'])
-@cross_origin()
+# @cross_origin()
 def upsert_asset():
     # TODO: validate args
     asset_url = request.json["url"]
@@ -35,17 +42,6 @@ def upsert_asset():
     app.logger.info("upsert_asset() %s %s", asset_url, user_phone)
 
     return add_user_to_asset(asset_url, user_phone)
-
-
-#
-# # happens every x seconds from db
-# @app.route('/', methods=['POST'])
-# def get_price_external():
-#     asset_url = request.form["url"]
-#
-#     get_price_internal(Asset(asset_url, "", "", "", False))
-#
-#     return "Started!"
 
 
 # start loop
@@ -91,11 +87,10 @@ def stop():
     return "Stopped!"
 
 
-@app.route('/get_assets_for_user/')
-@cross_origin()
+@app.route('/get_assets_for_user/', methods=['POST'])
 def get_assets_for_user():
     app.logger.info("get_assets_for_user")
-    user_email = request.args.get("user_email")
+    user_email = request.json["user_email"]
     app.logger.info(user_email)
 
     col = MongodbConnection.get_instance()
@@ -103,11 +98,19 @@ def get_assets_for_user():
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)
-    assets_list = []
+    assets_list = {}
+    key = 0
     for asset in cursor:
-        assets_list.append("https://opensea.io/assets/" + asset["url"])
+        assets_list[key] = "https://opensea.io/assets/" + asset["url"]
+        key = key + 1
 
-    return json.dumps(assets_list)
+    return assets_list
+
+
+@app.route('/test/')
+@cross_origin()
+def test():
+    return {"uv": "stam"}
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
