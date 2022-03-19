@@ -19,6 +19,7 @@ load_dotenv()
 app = Flask(__name__)
 
 cors = CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 loop_flag = True
 
@@ -28,8 +29,8 @@ loop_flag = True
 @cross_origin()
 def upsert_asset():
     # TODO: validate args
-    asset_url = request.form["url"]
-    user_phone = request.form["user_email"]
+    asset_url = request.json["url"]
+    user_phone = request.json["user_email"]
 
     app.logger.info("upsert_asset() %s %s", asset_url, user_phone)
 
