@@ -33,7 +33,6 @@ loop_flag = True
 
 # when user adding new asset from UI
 @app.route('/upsert_asset/', methods=['POST'])
-# @cross_origin()
 def upsert_asset():
     # TODO: validate args
     asset_url = request.json["url"]
@@ -101,14 +100,13 @@ def get_assets_for_user():
     assets_list = {}
     key = 0
     for asset in cursor:
-        assets_list[key] = "https://opensea.io/assets/" + asset["url"]
+        assets_list[key] = asset["url"]
         key = key + 1
 
     return assets_list
 
 
 @app.route('/test/')
-@cross_origin()
 def test():
     return {"uv": "stam"}
 
@@ -132,16 +130,16 @@ def add_user_to_asset(asset_url, user):
             return "added new user"
         else:
             app.logger.info("updating existing asset")
-            new_user_list = list(retrieved_asset_from_db["users"])
+            new_user_list = set(retrieved_asset_from_db["users"])
 
             if len(new_user_list) > 20:
                 error_msg = "Too much users on this url"
                 app.logger.info(error_msg)
                 return error_msg
 
-            new_user_list.append(user)
+            new_user_list.add(user)
 
-            new_values = {"$set": {"users": new_user_list}}
+            new_values = {"$set": {"users": list(new_user_list)}}
             col.update_one(asset_query, new_values)
             return "updating existing asset"
 
@@ -157,15 +155,13 @@ def add_new_asset(col, new_asset):
 
 def scrape_asset_data(asset_from_queue):
     try:
-        full_url = URL_PREFIX + asset_from_queue.url
+        full_url = asset_from_queue.url
         req = urllib.request.Request(url=full_url, headers=HEADERS)
         page = urllib.request.urlopen(req).read()
 
         soup = BeautifulSoup(page, features="html.parser")
 
         new_price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
-
-        app.logger.info("new_price: " + new_price)
 
         # need to notify user
         if new_price != asset_from_queue.price:
@@ -177,16 +173,20 @@ def scrape_asset_data(asset_from_queue):
             asset_from_queue.need_to_notify = False
 
     except IndexError:
-        asset_from_queue.price = "No price!"
+        if asset_from_queue.price != "No price!":
+            asset_from_queue.price = "No price!"
+            asset_from_queue.need_to_notify = True
     except Exception as e:
         asset_from_queue.error_message = str(e)
 
     finally:
-        asset_query = {"url": asset_from_queue.url}
-        new_values = {"$set": {"price": asset_from_queue.price}}
+        if asset_from_queue.need_to_notify:
+            app.logger.info("Updating asset: " + asset_from_queue.url + " to price: " + asset_from_queue.price)
+            asset_query = {"url": asset_from_queue.url}
+            new_values = {"$set": {"price": asset_from_queue.price}}
 
-        col = MongodbConnection.get_instance()
-        col.update_one(asset_query, new_values)
+            col = MongodbConnection.get_instance()
+            col.update_one(asset_query, new_values)
 
 
 def push_to_queue(asset):
