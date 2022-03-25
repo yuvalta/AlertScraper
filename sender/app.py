@@ -165,17 +165,12 @@ def scrape_asset_data(asset_from_queue):
 
         new_price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
 
+        app.logger.info("new_price: " + new_price)
+
         # need to notify user
         if new_price != asset_from_queue.price:
             asset_from_queue.price = new_price
             asset_from_queue.need_to_notify = True
-
-            # split to update function
-            asset_query = {"url": asset_from_queue.url}
-            new_values = {"$set": {"price": new_price}}
-
-            col = MongodbConnection.get_instance()
-            col.update_one(asset_query, new_values)
 
             push_to_queue(asset_from_queue)
         else:
@@ -185,6 +180,13 @@ def scrape_asset_data(asset_from_queue):
         asset_from_queue.price = "No price!"
     except Exception as e:
         asset_from_queue.error_message = str(e)
+
+    finally:
+        asset_query = {"url": asset_from_queue.url}
+        new_values = {"$set": {"price": asset_from_queue.price}}
+
+        col = MongodbConnection.get_instance()
+        col.update_one(asset_query, new_values)
 
 
 def push_to_queue(asset):
