@@ -5,3 +5,4 @@ pika==1.2.0
 pymongo==4.0.2
 python-dotenv==0.19.2
 dnspython==1.16.0
+validators==0.18.2

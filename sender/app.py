@@ -1,10 +1,10 @@
-import json
 import os
 import threading
 import time
 import urllib.request
-
 import pika
+import validators
+
 from AssetMetaData import Asset
 from MongodbConnection import MongodbConnection
 from bs4 import BeautifulSoup
@@ -32,10 +32,19 @@ loop_flag = True
 
 
 # when user adding new asset from UI
-def validate_input(string_to_validate):
-    if len(string_to_validate) > 0:
+def validate_input_url(string_to_validate):
+    if len(str(string_to_validate)) == 0:
         return False
-    if not string_to_validate.isalnum():
+    if not validators.url(string_to_validate):
+        return False
+
+    return True
+
+
+def validate_input_email(string_to_validate):
+    if len(str(string_to_validate)) == 0:
+        return False
+    if not validators.email(string_to_validate):
         return False
 
     return True
@@ -45,16 +54,16 @@ def validate_input(string_to_validate):
 def upsert_asset():
     # TODO: validate args
     asset_url = request.json["url"]
-    user_phone = request.json["user_email"]
+    user_email = request.json["user_email"]
 
-    if validate_input(asset_url) is False:
+    if not validate_input_url(asset_url):
         return {"error": "error in input"}
-    if validate_input(user_phone) is False:
+    if not validate_input_email(user_email):
         return {"error": "error in input"}
 
-    app.logger.info("upsert_asset() %s %s", asset_url, user_phone)
+    app.logger.info("upsert_asset() %s %s", asset_url, user_email)
 
-    return add_user_to_asset(asset_url, user_phone)
+    return add_user_to_asset(asset_url, user_email)
 
 
 # start loop
@@ -176,7 +185,7 @@ def add_user_to_asset(asset_url, user):
             app.logger.info("added new user")
             new_asset_user_list = [user]
             add_new_asset(col, Asset(asset_url, new_asset_user_list, "", "", False))
-            return "added new user"
+            return {"response": "added new user"}
         else:
             app.logger.info("updating existing asset")
             new_user_list = set(retrieved_asset_from_db["users"])
@@ -187,7 +196,7 @@ def add_user_to_asset(asset_url, user):
                 return error_msg
 
             if user in new_user_list:
-                return {"response": "User already Exist in asset"}
+                return {"response": "", "error": "User already Exist in asset"}
 
             new_user_list.add(user)
 
@@ -205,9 +214,9 @@ def add_new_asset(col, new_asset):
     col.insert_one(new_asset.__dict__)
 
 
-def scrape_asset_data(asset_from_queue):
+def scrape_asset_data(asset_to_queue):
     try:
-        full_url = asset_from_queue.url
+        full_url = asset_to_queue.url
         req = urllib.request.Request(url=full_url, headers=HEADERS)
         page = urllib.request.urlopen(req).read()
 
@@ -216,26 +225,25 @@ def scrape_asset_data(asset_from_queue):
         new_price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
 
         # need to notify user
-        if new_price != asset_from_queue.price:
-            asset_from_queue.price = new_price
-            asset_from_queue.need_to_notify = True
-
-            push_to_queue(asset_from_queue)
+        if new_price != asset_to_queue.price:
+            asset_to_queue.price = new_price
+            asset_to_queue.need_to_notify = True
         else:
-            asset_from_queue.need_to_notify = False
+            asset_to_queue.need_to_notify = False
 
     except IndexError:
-        if asset_from_queue.price != "No price!":
-            asset_from_queue.price = "No price!"
-            asset_from_queue.need_to_notify = True
+        if asset_to_queue.price != "No price!":
+            asset_to_queue.price = "No price!"
+            asset_to_queue.need_to_notify = True
     except Exception as e:
-        asset_from_queue.error_message = str(e)
+        asset_to_queue.error_message = str(e)
 
     finally:
-        if asset_from_queue.need_to_notify:
-            app.logger.info("Updating asset: " + asset_from_queue.url + " to price: " + asset_from_queue.price)
-            asset_query = {"url": asset_from_queue.url}
-            new_values = {"$set": {"price": asset_from_queue.price}}
+        if asset_to_queue.need_to_notify:
+            push_to_queue(asset_to_queue)
+            app.logger.info("Updating asset: " + asset_to_queue.url + " to price: " + asset_to_queue.price)
+            asset_query = {"url": asset_to_queue.url}
+            new_values = {"$set": {"price": asset_to_queue.price}}
 
             col = MongodbConnection.get_instance()
             col.update_one(asset_query, new_values)
