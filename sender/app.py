@@ -111,6 +111,43 @@ def test():
     return {"uv": "stam"}
 
 
+@app.route('/delete_user_from_asset/', methods=['POST'])
+def delete_user_from_asset():
+    app.logger.info("delete_user_from_asset")
+    user_email = request.json["user_email"]
+    asset_url = request.json["url"]
+
+    app.logger.info(user_email)
+    app.logger.info(asset_url)
+
+    error_message = ""
+
+    col = MongodbConnection.get_instance()
+
+    asset_query = {"url": asset_url}
+    retrieved_asset_from_db = col.find_one(asset_query)
+
+    user_list = set(retrieved_asset_from_db["users"])
+
+    if len(user_list) == 1 and user_email in user_list:
+        # only this user in asset, delete asset
+        try:
+            col.delete_one(asset_query)
+        except Exception as e:
+            error_message = str(e)
+        return {"response": "Asset deleted!", "error": error_message}
+
+    user_list.remove(user_email)
+
+    new_values = {"$set": {"users": list(user_list)}}
+    try:
+        col.update_one(asset_query, new_values)
+    except Exception as e:
+        error_message = str(e)
+
+    return {"response": "User deleted from asset!", "error": error_message}
+
+
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
 def add_user_to_asset(asset_url, user):
     try:
