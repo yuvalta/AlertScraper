@@ -32,11 +32,25 @@ loop_flag = True
 
 
 # when user adding new asset from UI
+def validate_input(string_to_validate):
+    if len(string_to_validate) > 0:
+        return False
+    if not string_to_validate.isalnum():
+        return False
+
+    return True
+
+
 @app.route('/upsert_asset/', methods=['POST'])
 def upsert_asset():
     # TODO: validate args
     asset_url = request.json["url"]
     user_phone = request.json["user_email"]
+
+    if validate_input(asset_url) is False:
+        return {"error": "error in input"}
+    if validate_input(user_phone) is False:
+        return {"error": "error in input"}
 
     app.logger.info("upsert_asset() %s %s", asset_url, user_phone)
 
@@ -113,12 +127,9 @@ def test():
 
 @app.route('/delete_user_from_asset/', methods=['POST'])
 def delete_user_from_asset():
-    app.logger.info("delete_user_from_asset")
     user_email = request.json["user_email"]
     asset_url = request.json["url"]
-
-    app.logger.info(user_email)
-    app.logger.info(asset_url)
+    app.logger.info("delete_user_from_asset: " + user_email + " " + asset_url)
 
     error_message = ""
 
@@ -137,7 +148,8 @@ def delete_user_from_asset():
             error_message = str(e)
         return {"response": "Asset deleted!", "error": error_message}
 
-    user_list.remove(user_email)
+    if len(user_list) > 0:
+        user_list.remove(user_email)
 
     new_values = {"$set": {"users": list(user_list)}}
     try:
@@ -174,11 +186,14 @@ def add_user_to_asset(asset_url, user):
                 app.logger.info(error_msg)
                 return error_msg
 
+            if user in new_user_list:
+                return {"response": "User already Exist in asset"}
+
             new_user_list.add(user)
 
             new_values = {"$set": {"users": list(new_user_list)}}
             col.update_one(asset_query, new_values)
-            return "updating existing asset"
+            return {"response": "updating existing asset"}
 
     except Exception as e:
         app.logger.info(str(e))
