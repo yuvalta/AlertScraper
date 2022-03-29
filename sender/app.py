@@ -116,7 +116,6 @@ def get_assets_for_user():
     app.logger.info(user_email)
 
     col = MongodbConnection.get_instance()
-    app.logger.info(col)
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)
@@ -184,7 +183,7 @@ def add_user_to_asset(asset_url, user):
         if retrieved_asset_from_db is None:
             app.logger.info("added new user")
             new_asset_user_list = [user]
-            add_new_asset(col, Asset(asset_url, new_asset_user_list, "", "", False))
+            add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False))
             return {"response": "added new user"}
         else:
             app.logger.info("updating existing asset")
@@ -226,15 +225,21 @@ def scrape_asset_data(asset_to_queue):
 
         # need to notify user
         if new_price != asset_to_queue.price:
+            # don't send email on new assets
+            if asset_to_queue.price != "new asset":
+                asset_to_queue.need_to_notify = True
+
             asset_to_queue.price = new_price
-            asset_to_queue.need_to_notify = True
         else:
             asset_to_queue.need_to_notify = False
 
     except IndexError:
         if asset_to_queue.price != "No price!":
+            # don't send email on new assets
+            if asset_to_queue.price != "new asset":
+                asset_to_queue.need_to_notify = True
+
             asset_to_queue.price = "No price!"
-            asset_to_queue.need_to_notify = True
     except Exception as e:
         asset_to_queue.error_message = str(e)
 
