@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import time
@@ -119,18 +120,25 @@ def get_assets_for_user():
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)
-    assets_list = {}
-    key = 0
+    assets_list = []
+    # key = 0
     for asset in cursor:
-        assets_list[key] = asset["url"]
-        key = key + 1
+        assets_list.append({"url": asset["url"], "price": asset["price"]})
+        # key = key + 1
 
-    return assets_list
+    return json.dumps(assets_list)
 
 
 @app.route('/test/')
 def test():
     return {"uv": "stam"}
+
+
+@app.route('/delete_all/')
+def delete_all():
+    col = MongodbConnection.get_instance()
+    col.delete_many({})
+    return {"delete_all": "deleted"}
 
 
 @app.route('/delete_user_from_asset/', methods=['POST'])
@@ -214,6 +222,7 @@ def add_new_asset(col, new_asset):
 
 
 def scrape_asset_data(asset_to_queue):
+    need_to_update_new_asset = (asset_to_queue.price == "new asset")
     try:
         full_url = asset_to_queue.url
         req = urllib.request.Request(url=full_url, headers=HEADERS)
@@ -238,14 +247,14 @@ def scrape_asset_data(asset_to_queue):
             # don't send email on new assets
             if asset_to_queue.price != "new asset":
                 asset_to_queue.need_to_notify = True
-
             asset_to_queue.price = "No price!"
     except Exception as e:
         asset_to_queue.error_message = str(e)
 
     finally:
-        if asset_to_queue.need_to_notify:
-            push_to_queue(asset_to_queue)
+        if asset_to_queue.need_to_notify or need_to_update_new_asset:
+            if asset_to_queue.need_to_notify:
+                push_to_queue(asset_to_queue)
             app.logger.info("Updating asset: " + asset_to_queue.url + " to price: " + asset_to_queue.price)
             asset_query = {"url": asset_to_queue.url}
             new_values = {"$set": {"price": asset_to_queue.price}}
