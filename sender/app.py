@@ -94,7 +94,7 @@ def start():
             app.logger.info("finished scrape assets...")
 
             # scrape floor price
-            collection_col = MongodbConnection.get_instance()["CollectionCol"]
+            collection_col = MongodbConnection.get_instance()["CollectionsCol"]
             full_collections_list = collection_col.find({})
 
             mapped_floor_list = create_mapped_assets_list(full_collections_list)
@@ -130,9 +130,13 @@ def stop():
 def get_assets_for_user():
     app.logger.info("get_assets_for_user")
     user_email = request.json["user_email"]
+    mode = request.json["mode"]
     app.logger.info(user_email)
 
-    col = MongodbConnection.get_instance()["AssetsCol"]
+    if mode == SCRAPE_MODE_COLLECTIONS:
+        col = MongodbConnection.get_instance()["CollectionsCol"]
+    else:
+        col = MongodbConnection.get_instance()["AssetsCol"]
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)
@@ -298,7 +302,6 @@ def get_page_content_collection(full_url):
 def scrape_asset_data(assets_to_queue, scraping_mode):
     for asset_to_queue in assets_to_queue:
         is_new_asset = (asset_to_queue.price == "new asset")
-        app.logger.error("scrape_asset_data " + scraping_mode + " - " + asset_to_queue.url)
         try:
             full_url = asset_to_queue.url
             if scraping_mode == SCRAPE_MODE_ASSETS:
