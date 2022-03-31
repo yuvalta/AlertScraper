@@ -3,6 +3,8 @@ import os
 import threading
 import time
 import urllib.request
+from urllib.error import HTTPError
+
 import pika
 import validators
 
@@ -74,6 +76,7 @@ def upsert_asset():
 def start():
     app.logger.info("start looping")
     global loop_flag
+    app.logger.info(loop_flag)
 
     try:
         while loop_flag:
@@ -90,8 +93,8 @@ def start():
             [t.start() for t in threads]
             [t.join() for t in threads]
 
-            time.sleep(10)
             app.logger.info("finished scrape assets...")
+            time.sleep(10)
 
             # scrape floor price
             collection_col = MongodbConnection.get_instance()["CollectionsCol"]
@@ -110,7 +113,7 @@ def start():
             time.sleep(30)
 
     except Exception as e:
-        app.logger.info(str(e))
+        app.logger.info("Exception in loop " + str(e))
 
     return "Finished loop!"
 
@@ -197,25 +200,28 @@ def delete_user_from_asset():
 # mapping db objects to AssetMetaData object and append to truncated list
 def create_mapped_assets_list(full_assets_list):
     mapped_assets_list = []
-    for asset in full_assets_list:
-        sublist = []
+    try:
+        for asset in full_assets_list:
+            sublist = []
 
-        asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
-                              asset["need_to_notify"], asset["action"])
-        sublist.append(asset_from_db)
+            asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
+                                  asset["need_to_notify"], asset["action"])
+            sublist.append(asset_from_db)
 
-        if full_assets_list.alive:
-            next_asset = full_assets_list.next()
-        else:
+            if full_assets_list.alive:
+                next_asset = full_assets_list.next()
+            else:
+                mapped_assets_list.append(sublist)
+                break
+
+            asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
+                                  next_asset["error_message"],
+                                  next_asset["need_to_notify"], next_asset["action"])
+            sublist.append(asset_from_db)
+
             mapped_assets_list.append(sublist)
-            break
-
-        asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
-                              next_asset["error_message"],
-                              next_asset["need_to_notify"], next_asset["action"])
-        sublist.append(asset_from_db)
-
-        mapped_assets_list.append(sublist)
+    except Exception as e:
+        app.logger.info("Exception in create_mapped_assets_list - " + str(e))
     return mapped_assets_list
 
 
@@ -268,13 +274,20 @@ def add_new_asset(col, new_asset):
 
 
 def update_asset_in_asset_col_db(asset_to_queue):
-    app.logger.info("Updating asset: " + asset_to_queue.url + " to price: "
-                    + asset_to_queue.price + " Action: " + asset_to_queue.action)
+    try:
+        app.logger.info("Updating asset: " + asset_to_queue.url + " to price: "
+                        + asset_to_queue.price + " Action: " + asset_to_queue.action)
+    except:
+        app.logger.info("update_asset_in_asset_col_db")
 
     asset_query = {"url": asset_to_queue.url}
     new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action}}
 
-    col = MongodbConnection.get_instance()["AssetsCol"]
+    if asset_to_queue.action == SCRAPE_MODE_COLLECTIONS:
+        col = MongodbConnection.get_instance()["CollectionsCol"]
+    else:
+        col = MongodbConnection.get_instance()["AssetsCol"]
+
     col.update_one(asset_query, new_values)
 
 
@@ -287,7 +300,6 @@ def get_page_content_collection(full_url):
 
         try:
             content_floor_price = soup.find_all("div", class_=FLOOR_PRICE_CLASS)[2]
-            app.logger.error("collection floor price is " + content_floor_price.contents[0])
         except Exception as e:
             app.logger.error("Except in content_floor_price" + str(e))
             return None
@@ -295,7 +307,7 @@ def get_page_content_collection(full_url):
         return content_floor_price
 
     except Exception as e:  # general exception
-        app.logger.error("Except in get_page_content_collection" + str(e))
+        app.logger.error("Except in get_page_content_collection " + str(e))
         return None
 
 
@@ -379,8 +391,14 @@ def get_page_content(full_url):
 
         return content_price, detect_action(content_button)
 
+    # retry on 429
+    except HTTPError as e:
+        if e.code == 429:
+            time.sleep(1)
+            return get_page_content(full_url)
+
     except Exception as e:  # general exception
-        app.logger.error("Except in get_page_content" + str(e))
+        app.logger.error("Except in get_page_content " + str(e))
         return None, None
 
 
