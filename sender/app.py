@@ -94,7 +94,7 @@ def start():
             [t.join() for t in threads]
 
             app.logger.info("finished scrape assets...")
-            time.sleep(10)
+            time.sleep(30)
 
             # scrape floor price
             collection_col = MongodbConnection.get_instance()["CollectionsCol"]
