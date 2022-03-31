@@ -15,7 +15,7 @@ class MongodbConnection:
         try:
             uri = str(os.environ.get('MONGODB_URI'))
             client = MongoClient(uri)
-            db = client["AlertNFT"]
-            MongodbConnection.__instance = db["AssetsCol"]
+            MongodbConnection.__instance = client["AlertNFT"]
+            # MongodbConnection.__instance = db["AssetsCol"]
         except Exception as e:
             print("Error in connection to db: " + str(e))

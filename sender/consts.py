@@ -1,4 +1,3 @@
-
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
                          'AppleWebKit/537.11 (KHTML, like Gecko) '
                          'Chrome/23.0.1271.64 Safari/537.11',
@@ -15,3 +14,7 @@ BUTTON_TYPE_CLASS = "Blockreact__Block-sc-1xf18x6-0 Flexreact__Flex-sc-1twd32i-0
 FLOOR_PRICE_CLASS = "Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX"
 
 URL_PREFIX = "https://opensea.io/assets/"
+
+SCRAPE_MODE_ASSETS = "Assets"
+
+SCRAPE_MODE_COLLECTIONS = "Collections"

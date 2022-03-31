@@ -12,7 +12,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, request
 
-from consts import PRICE_CLASS, HEADERS, URL_PREFIX, BUTTON_TYPE_CLASS
+from consts import PRICE_CLASS, HEADERS, URL_PREFIX, BUTTON_TYPE_CLASS, FLOOR_PRICE_CLASS, SCRAPE_MODE_ASSETS, \
+    SCRAPE_MODE_COLLECTIONS
 from flask_cors import cross_origin, CORS
 
 load_dotenv()
@@ -75,37 +76,36 @@ def start():
 
     try:
         while loop_flag:
-            mapped_assets_list = []
-            col = MongodbConnection.get_instance()
-            full_assets_list = col.find({})
-            for asset in full_assets_list:
-                sublist = []
-
-                asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
-                                      asset["need_to_notify"], asset["action"])
-                sublist.append(asset_from_db)
-
-                if full_assets_list.alive:
-                    next_asset = full_assets_list.next()
-                else:
-                    mapped_assets_list.append(sublist)
-                    break
-
-                asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
-                                      next_asset["error_message"],
-                                      next_asset["need_to_notify"], next_asset["action"])
-                sublist.append(asset_from_db)
-
-                mapped_assets_list.append(sublist)
-
             # scrape assets price
+            assets_col = MongodbConnection.get_instance()["AssetsCol"]
+            full_assets_list = assets_col.find({})
+
+            mapped_assets_list = create_mapped_assets_list(full_assets_list)
+
             app.logger.info("scraping " + str(len(mapped_assets_list) * 2) + " assets prices")
-            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_asset,)) for mapped_asset in
-                       mapped_assets_list]
+            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_asset, SCRAPE_MODE_ASSETS)) for
+                       mapped_asset in mapped_assets_list]
 
             [t.start() for t in threads]
             [t.join() for t in threads]
 
+            time.sleep(10)
+            app.logger.info("finished scrape assets...")
+
+            # scrape floor price
+            collection_col = MongodbConnection.get_instance()["CollectionCol"]
+            full_collections_list = collection_col.find({})
+
+            mapped_floor_list = create_mapped_assets_list(full_collections_list)
+
+            app.logger.info("scraping " + str(len(mapped_floor_list) * 2) + " collections floor prices")
+            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_floor, SCRAPE_MODE_COLLECTIONS)) for
+                       mapped_floor in mapped_floor_list]
+
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+
+            app.logger.info("finished loop, sleeping...")
             time.sleep(30)
 
     except Exception as e:
@@ -131,7 +131,7 @@ def get_assets_for_user():
     user_email = request.json["user_email"]
     app.logger.info(user_email)
 
-    col = MongodbConnection.get_instance()
+    col = MongodbConnection.get_instance()["AssetsCol"]
     asset_query = {"users": user_email}
 
     cursor = col.find(asset_query)
@@ -147,9 +147,9 @@ def test():
     return {"uv": "stam"}
 
 
-@app.route('/delete_all/')
-def delete_all():
-    col = MongodbConnection.get_instance()
+@app.route('/delete_all_from_assets_col/')
+def delete_all_from_assets_col():
+    col = MongodbConnection.get_instance()["AssetsCol"]
     col.delete_many({})
     return {"delete_all": "deleted"}
 
@@ -162,7 +162,7 @@ def delete_user_from_asset():
 
     error_message = ""
 
-    col = MongodbConnection.get_instance()
+    col = MongodbConnection.get_instance()["AssetsCol"]
 
     asset_query = {"url": asset_url}
     retrieved_asset_from_db = col.find_one(asset_query)
@@ -189,10 +189,35 @@ def delete_user_from_asset():
     return {"response": "User deleted from asset!", "error": error_message}
 
 
+# mapping db objects to AssetMetaData object and append to truncated list
+def create_mapped_assets_list(full_assets_list):
+    mapped_assets_list = []
+    for asset in full_assets_list:
+        sublist = []
+
+        asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
+                              asset["need_to_notify"], asset["action"])
+        sublist.append(asset_from_db)
+
+        if full_assets_list.alive:
+            next_asset = full_assets_list.next()
+        else:
+            mapped_assets_list.append(sublist)
+            break
+
+        asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
+                              next_asset["error_message"],
+                              next_asset["need_to_notify"], next_asset["action"])
+        sublist.append(asset_from_db)
+
+        mapped_assets_list.append(sublist)
+    return mapped_assets_list
+
+
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
 def add_user_to_asset(asset_url, user):
     try:
-        col = MongodbConnection.get_instance()
+        col = MongodbConnection.get_instance()["AssetsCol"]
 
         app.logger.info(col)
 
@@ -234,23 +259,49 @@ def add_new_asset(col, new_asset):
     col.insert_one(new_asset.__dict__)
 
 
-def update_asset_in_db(asset_to_queue):
+def update_asset_in_asset_col_db(asset_to_queue):
     app.logger.info("Updating asset: " + asset_to_queue.url + " to price: "
                     + asset_to_queue.price + " Action: " + asset_to_queue.action)
 
     asset_query = {"url": asset_to_queue.url}
     new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action}}
 
-    col = MongodbConnection.get_instance()
+    col = MongodbConnection.get_instance()["AssetsCol"]
     col.update_one(asset_query, new_values)
 
 
-def scrape_asset_data(assets_to_queue):
+def get_page_content_collection(full_url):
+    try:
+        req = urllib.request.Request(url=full_url, headers=HEADERS)
+        page = urllib.request.urlopen(req).read()
+
+        soup = BeautifulSoup(page, features="html.parser")
+
+        try:
+            content_floor_price = soup.find_all("div", class_=FLOOR_PRICE_CLASS)[2]
+            app.logger.error("collection floor price is " + content_floor_price.contents[0])
+        except Exception as e:
+            app.logger.error("Except in content_floor_price" + str(e))
+            return None
+
+        return content_floor_price
+
+    except Exception as e:  # general exception
+        app.logger.error("Except in get_page_content_collection" + str(e))
+        return None
+
+
+def scrape_asset_data(assets_to_queue, scraping_mode):
     for asset_to_queue in assets_to_queue:
         is_new_asset = (asset_to_queue.price == "new asset")
+        app.logger.error("scrape_asset_data " + scraping_mode + " - " + asset_to_queue.url)
         try:
             full_url = asset_to_queue.url
-            content_price, content_button = get_page_content(full_url)
+            if scraping_mode == SCRAPE_MODE_ASSETS:
+                content_price, content_button = get_page_content(full_url)
+            else:
+                content_price = get_page_content_collection(full_url)
+                content_button = SCRAPE_MODE_COLLECTIONS
 
             # no price found
             if content_price is None:
@@ -277,12 +328,12 @@ def scrape_asset_data(assets_to_queue):
                 asset_to_queue.price = new_price
 
         except Exception as e:
-            app.logger.error("Except in scrape asset " + str(e))
+            app.logger.error("Except in scrape " + scraping_mode + " - " + str(e))
             asset_to_queue.error_message = str(e)
 
         finally:
             if asset_to_queue.need_to_notify:
-                update_asset_in_db(asset_to_queue)
+                update_asset_in_asset_col_db(asset_to_queue)
                 if not is_new_asset:
                     push_to_queue(asset_to_queue)
 
@@ -292,6 +343,8 @@ def detect_action(action):
         return "Buy Now"
     if str(action) == "local_offer":
         return "Bid"
+    if str(action) == "Collection":
+        return "Collection"
 
     return "No Action Detected"
 
@@ -307,7 +360,7 @@ def get_page_content(full_url):
             content_button = soup.find_all("div", class_=BUTTON_TYPE_CLASS)[0].contents[0].contents[0]
         except Exception as e:
             app.logger.error("Except in content_button" + str(e))
-            return None
+            return None, None
 
         try:
             content_price = soup.find_all("div", class_=PRICE_CLASS)[0]
@@ -321,7 +374,7 @@ def get_page_content(full_url):
 
     except Exception as e:  # general exception
         app.logger.error("Except in get_page_content" + str(e))
-        return None
+        return None, None
 
 
 def push_to_queue(asset):
