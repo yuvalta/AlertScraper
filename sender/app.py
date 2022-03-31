@@ -321,8 +321,11 @@ def scrape_asset_data(assets_to_queue, scraping_mode):
                 # if getting 429 error, try again 3 times
                 if content_price == 429:
                     for tries in range(3):
-                        time.sleep(1)
+                        time.sleep(tries + 0.5)
                         content_price, content_button = get_page_content(full_url)
+                        # abort on 3rd try
+                        if tries == 2:
+                            continue
             else:
                 content_price = get_page_content_collection(full_url)
                 content_button = SCRAPE_MODE_COLLECTIONS
