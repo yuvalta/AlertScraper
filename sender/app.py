@@ -79,18 +79,33 @@ def start():
             col = MongodbConnection.get_instance()
             full_assets_list = col.find({})
             for asset in full_assets_list:
+                sublist = []
+
                 asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
                                       asset["need_to_notify"], asset["action"])
-                mapped_assets_list.append(asset_from_db)
+                sublist.append(asset_from_db)
 
-            app.logger.info("scraping " + str(len(mapped_assets_list)) + " assets")
+                if full_assets_list.alive:
+                    next_asset = full_assets_list.next()
+                else:
+                    mapped_assets_list.append(sublist)
+                    break
+
+                asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
+                                      next_asset["error_message"],
+                                      next_asset["need_to_notify"], next_asset["action"])
+                sublist.append(asset_from_db)
+
+                mapped_assets_list.append(sublist)
+
+            # scrape assets price
+            app.logger.info("scraping " + str(len(mapped_assets_list) * 2) + " assets prices")
             threads = [threading.Thread(target=scrape_asset_data, args=(mapped_asset,)) for mapped_asset in
                        mapped_assets_list]
 
             [t.start() for t in threads]
             [t.join() for t in threads]
 
-            app.logger.info("finished loop, sleeping...")
             time.sleep(30)
 
     except Exception as e:
@@ -230,45 +245,46 @@ def update_asset_in_db(asset_to_queue):
     col.update_one(asset_query, new_values)
 
 
-def scrape_asset_data(asset_to_queue):
-    is_new_asset = (asset_to_queue.price == "new asset")
-    try:
-        full_url = asset_to_queue.url
-        content_price, content_button = get_page_content(full_url)
+def scrape_asset_data(assets_to_queue):
+    for asset_to_queue in assets_to_queue:
+        is_new_asset = (asset_to_queue.price == "new asset")
+        try:
+            full_url = asset_to_queue.url
+            content_price, content_button = get_page_content(full_url)
 
-        # no price found
-        if content_price is None:
-            # same as last iteration
-            if asset_to_queue.price == "No price!":
-                return
+            # no price found
+            if content_price is None:
+                # same as last iteration
+                if asset_to_queue.price == "No price!":
+                    continue
 
-            # price changed to No price, need to update + notify
-            asset_to_queue.need_to_notify = True
-            asset_to_queue.price = "No price!"
-            asset_to_queue.action = content_button
+                # price changed to No price, need to update + notify
+                asset_to_queue.need_to_notify = True
+                asset_to_queue.price = "No price!"
+                asset_to_queue.action = content_button
 
-        # price found
-        else:
-            new_price = content_price.contents[0]
+            # price found
+            else:
+                new_price = content_price.contents[0]
 
-            # same price
-            if new_price == asset_to_queue.price:
-                return
+                # same price
+                if new_price == asset_to_queue.price:
+                    continue
 
-            # new price, need to update + notify
-            asset_to_queue.need_to_notify = True
-            asset_to_queue.action = content_button
-            asset_to_queue.price = new_price
+                # new price, need to update + notify
+                asset_to_queue.need_to_notify = True
+                asset_to_queue.action = content_button
+                asset_to_queue.price = new_price
 
-    except Exception as e:
-        app.logger.error("Except in scrape asset " + str(e))
-        asset_to_queue.error_message = str(e)
+        except Exception as e:
+            app.logger.error("Except in scrape asset " + str(e))
+            asset_to_queue.error_message = str(e)
 
-    finally:
-        if asset_to_queue.need_to_notify:
-            update_asset_in_db(asset_to_queue)
-            if not is_new_asset:
-                push_to_queue(asset_to_queue)
+        finally:
+            if asset_to_queue.need_to_notify:
+                update_asset_in_db(asset_to_queue)
+                if not is_new_asset:
+                    push_to_queue(asset_to_queue)
 
 
 def detect_action(action):
