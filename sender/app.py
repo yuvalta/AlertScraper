@@ -318,6 +318,11 @@ def scrape_asset_data(assets_to_queue, scraping_mode):
             full_url = asset_to_queue.url
             if scraping_mode == SCRAPE_MODE_ASSETS:
                 content_price, content_button = get_page_content(full_url)
+                # if getting 429 error, try again 3 times
+                if content_price == 429:
+                    for tries in range(3):
+                        time.sleep(1)
+                        content_price, content_button = get_page_content(full_url)
             else:
                 content_price = get_page_content_collection(full_url)
                 content_button = SCRAPE_MODE_COLLECTIONS
@@ -394,8 +399,8 @@ def get_page_content(full_url):
     # retry on 429
     except HTTPError as e:
         if e.code == 429:
-            time.sleep(1)
-            return get_page_content(full_url)
+            app.logger.error("retry on 429 " + str(e))
+            return e.code, e.code
 
     except Exception as e:  # general exception
         app.logger.error("Except in get_page_content " + str(e))
