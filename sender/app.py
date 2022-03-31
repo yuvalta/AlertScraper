@@ -57,6 +57,7 @@ def upsert_asset():
     # TODO: validate args
     asset_url = request.json["url"]
     user_email = request.json["user_email"]
+    mode = request.json["mode"]
 
     if not validate_input_url(asset_url):
         return {"error": "error in input"}
@@ -65,7 +66,7 @@ def upsert_asset():
 
     app.logger.info("upsert_asset() %s %s", asset_url, user_email)
 
-    return add_user_to_asset(asset_url, user_email)
+    return add_user_to_asset(asset_url, user_email, mode)
 
 
 # start loop
@@ -215,11 +216,14 @@ def create_mapped_assets_list(full_assets_list):
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
-def add_user_to_asset(asset_url, user):
+def add_user_to_asset(asset_url, user, mode):
     try:
-        col = MongodbConnection.get_instance()["AssetsCol"]
+        if mode == SCRAPE_MODE_COLLECTIONS:
+            col = MongodbConnection.get_instance()["CollectionsCol"]
+        else:
+            col = MongodbConnection.get_instance()["AssetsCol"]
 
-        app.logger.info(col)
+        app.logger.info("add_user_to_asset - " + mode)
 
         asset_query = {"url": asset_url}
         retrieved_asset_from_db = col.find_one(asset_query)
@@ -227,12 +231,12 @@ def add_user_to_asset(asset_url, user):
         app.logger.info(retrieved_asset_from_db)
 
         if retrieved_asset_from_db is None:
-            app.logger.info("added new user")
+            app.logger.info("adding new " + mode)
             new_asset_user_list = [user]
             add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False, ""))
-            return {"response": "added new user"}
+            return {"response": "added new " + mode}
         else:
-            app.logger.info("updating existing asset")
+            app.logger.info("updating existing " + mode)
             new_user_list = set(retrieved_asset_from_db["users"])
 
             if len(new_user_list) > 20:
@@ -241,13 +245,13 @@ def add_user_to_asset(asset_url, user):
                 return {"response": "", "error": error_msg}
 
             if user in new_user_list:
-                return {"response": "", "error": "User already Exist in asset"}
+                return {"response": "", "error": "User already Exist in " + mode}
 
             new_user_list.add(user)
 
             new_values = {"$set": {"users": list(new_user_list)}}
             col.update_one(asset_query, new_values)
-            return {"response": "updating existing asset"}
+            return {"response": "updating existing " + mode}
 
     except Exception as e:
         app.logger.info(str(e))
