@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, request
 
-from consts import PRICE_CLASS, HEADERS, URL_PREFIX
+from consts import PRICE_CLASS, HEADERS, URL_PREFIX, BUTTON_TYPE_CLASS
 from flask_cors import cross_origin, CORS
 
 load_dotenv()
@@ -80,7 +80,7 @@ def start():
             full_assets_list = col.find({})
             for asset in full_assets_list:
                 asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
-                                      asset["need_to_notify"])
+                                      asset["need_to_notify"], asset["action"])
                 mapped_assets_list.append(asset_from_db)
 
             app.logger.info("scraping " + str(len(mapped_assets_list)) + " assets")
@@ -121,10 +121,8 @@ def get_assets_for_user():
 
     cursor = col.find(asset_query)
     assets_list = []
-    # key = 0
     for asset in cursor:
-        assets_list.append({"url": asset["url"], "price": asset["price"]})
-        # key = key + 1
+        assets_list.append({"url": asset["url"], "price": asset["price"], "action": asset["action"]})
 
     return json.dumps(assets_list)
 
@@ -191,16 +189,16 @@ def add_user_to_asset(asset_url, user):
         if retrieved_asset_from_db is None:
             app.logger.info("added new user")
             new_asset_user_list = [user]
-            add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False))
+            add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False, ""))
             return {"response": "added new user"}
         else:
             app.logger.info("updating existing asset")
             new_user_list = set(retrieved_asset_from_db["users"])
 
             if len(new_user_list) > 20:
-                error_msg = "Too much users on this url"
+                error_msg = "Too many users on this url"
                 app.logger.info(error_msg)
-                return error_msg
+                return {"response": "", "error": error_msg}
 
             if user in new_user_list:
                 return {"response": "", "error": "User already Exist in asset"}
@@ -221,46 +219,93 @@ def add_new_asset(col, new_asset):
     col.insert_one(new_asset.__dict__)
 
 
+def update_asset_in_db(asset_to_queue):
+    app.logger.info("Updating asset: " + asset_to_queue.url + " to price: "
+                    + asset_to_queue.price + " Action: " + asset_to_queue.action)
+
+    asset_query = {"url": asset_to_queue.url}
+    new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action}}
+
+    col = MongodbConnection.get_instance()
+    col.update_one(asset_query, new_values)
+
+
 def scrape_asset_data(asset_to_queue):
-    need_to_update_new_asset = (asset_to_queue.price == "new asset")
+    is_new_asset = (asset_to_queue.price == "new asset")
     try:
         full_url = asset_to_queue.url
+        content_price, content_button = get_page_content(full_url)
+
+        # no price found
+        if content_price is None:
+            # same as last iteration
+            if asset_to_queue.price == "No price!":
+                return
+
+            # price changed to No price, need to update + notify
+            asset_to_queue.need_to_notify = True
+            asset_to_queue.price = "No price!"
+            asset_to_queue.action = content_button
+
+        # price found
+        else:
+            new_price = content_price.contents[0]
+
+            # same price
+            if new_price == asset_to_queue.price:
+                return
+
+            # new price, need to update + notify
+            asset_to_queue.need_to_notify = True
+            asset_to_queue.action = content_button
+            asset_to_queue.price = new_price
+
+    except Exception as e:
+        app.logger.error("Except in scrape asset " + str(e))
+        asset_to_queue.error_message = str(e)
+
+    finally:
+        if asset_to_queue.need_to_notify:
+            update_asset_in_db(asset_to_queue)
+            if not is_new_asset:
+                push_to_queue(asset_to_queue)
+
+
+def detect_action(action):
+    if str(action) == "account_balance_wallet":
+        return "Buy Now"
+    if str(action) == "local_offer":
+        return "Bid"
+
+    return "No Action Detected"
+
+
+def get_page_content(full_url):
+    try:
         req = urllib.request.Request(url=full_url, headers=HEADERS)
         page = urllib.request.urlopen(req).read()
 
         soup = BeautifulSoup(page, features="html.parser")
 
-        new_price = soup.find_all("div", class_=PRICE_CLASS)[0].contents[0]
+        try:
+            content_button = soup.find_all("div", class_=BUTTON_TYPE_CLASS)[0].contents[0].contents[0]
+        except Exception as e:
+            app.logger.error("Except in content_button" + str(e))
+            return None
 
-        # need to notify user
-        if new_price != asset_to_queue.price:
-            # don't send email on new assets
-            if asset_to_queue.price != "new asset":
-                asset_to_queue.need_to_notify = True
+        try:
+            content_price = soup.find_all("div", class_=PRICE_CLASS)[0]
+        except IndexError:  # if no price found
+            return None, detect_action(content_button)
+        except Exception as e:
+            app.logger.error("Except in content_button" + str(e))
+            return None
 
-            asset_to_queue.price = new_price
-        else:
-            asset_to_queue.need_to_notify = False
+        return content_price, detect_action(content_button)
 
-    except IndexError:
-        if asset_to_queue.price != "No price!":
-            # don't send email on new assets
-            if asset_to_queue.price != "new asset":
-                asset_to_queue.need_to_notify = True
-            asset_to_queue.price = "No price!"
-    except Exception as e:
-        asset_to_queue.error_message = str(e)
-
-    finally:
-        if asset_to_queue.need_to_notify or need_to_update_new_asset:
-            if asset_to_queue.need_to_notify:
-                push_to_queue(asset_to_queue)
-            app.logger.info("Updating asset: " + asset_to_queue.url + " to price: " + asset_to_queue.price)
-            asset_query = {"url": asset_to_queue.url}
-            new_values = {"$set": {"price": asset_to_queue.price}}
-
-            col = MongodbConnection.get_instance()
-            col.update_one(asset_query, new_values)
+    except Exception as e:  # general exception
+        app.logger.error("Except in get_page_content" + str(e))
+        return None
 
 
 def push_to_queue(asset):
