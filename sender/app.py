@@ -322,7 +322,7 @@ def scrape_asset_data(assets_to_queue, scraping_mode):
                 if content_price == 429:
                     abort_retry = False
                     for tries in range(3):
-                        time.sleep(tries + 0.5)
+                        time.sleep(10)
                         content_price, content_button = get_page_content(full_url)
                         # abort on 3rd try
                         if tries == 2:
