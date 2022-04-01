@@ -94,7 +94,7 @@ def start():
             [t.join() for t in threads]
 
             app.logger.info("finished scrape assets...")
-            time.sleep(30)
+            time.sleep(60)
 
             # scrape floor price
             collection_col = MongodbConnection.get_instance()["CollectionsCol"]
@@ -110,7 +110,7 @@ def start():
             [t.join() for t in threads]
 
             app.logger.info("finished loop, sleeping...")
-            time.sleep(30)
+            time.sleep(60 * 5)
 
     except Exception as e:
         app.logger.info("Exception in loop " + str(e))
