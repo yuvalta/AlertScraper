@@ -58,7 +58,7 @@ def validate_input_email(string_to_validate):
 @app.route('/upsert_asset/', methods=['POST'])
 def upsert_asset():
     # TODO: validate args
-    asset_url = request.json["url"]
+    asset_url = request.json["contract_id"]
     user_email = request.json["user_email"]
     mode = request.json["mode"]
 
@@ -98,7 +98,11 @@ def start():
 
             app.logger.info("scraping " + str(len(mapped_floor_list)) + " collections floor prices")
 
-            compare_floor_price_response(response, mapped_floor_list)
+            # dict with contract id as Key and floor price as Value
+            # this dict is helping me to compare price in more efficient way
+            updated_price_chart = create_response_dict(response)
+
+            compare_floor_price_with_chart(updated_price_chart, mapped_floor_list)
 
             app.logger.info("finished loop, sleeping...")
             time.sleep(30)
@@ -108,30 +112,41 @@ def start():
 
     return "Finished loop!"
 
-def compare_floor_price_response(response, mapped_floor_list):
-    index = 0
-    for contract in response.json()["data"]:
+
+def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
+    for asset_db in mapped_floor_list:
         try:
-            contract_id = contract["asset_contract"]
-            new_floor_price = contract["floor_price"][1]["floor_price"]
-
-            asset_to_compare = mapped_floor_list[index]
-
-            if asset_to_compare.price != new_floor_price:
-                asset_to_compare.need_to_notify = True
-                asset_to_compare.price = new_floor_price
+            app.logger.info(asset_db.to_json())
+            asset_db.action = SCRAPE_MODE_COLLECTIONS
+            if asset_db.price != updated_price_chart[str(asset_db.contract_id).lower()]:
+                app.logger.info("in compare_floor_price_response - need to notify")
+                asset_db.need_to_notify = True
+                asset_db.price = updated_price_chart[asset_db.contract_id]
             else:
-                asset_to_compare.need_to_notify = False
+                app.logger.info("in compare_floor_price_response - no need to notify")
+                asset_db.need_to_notify = False
 
         except Exception as e:
-            app.logger.error("Except in scrape " + str(e) + " contract - " + contract_id)
-            asset_to_compare.error_message = str(e)
+            app.logger.error("Except in scrape " + str(e) + " contract - " + asset_db.contract_id)
+            asset_db.error_message = str(e)
         finally:
-            if asset_to_compare.need_to_notify:
-                update_asset_in_asset_col_db(asset_to_compare)
-                push_to_queue(asset_to_compare)
+            if asset_db.need_to_notify:
+                update_asset_in_asset_col_db(asset_db)
+                # push_to_queue(asset_db)
 
-            index = index + 1
+
+def create_response_dict(response):
+    price_chart = {}
+    for contract in response["data"]:
+        contract_id = contract["asset_contract"]
+        new_floor_price = contract["floor_price"][1]["floor_price"]
+
+        price_chart[str(contract_id).lower()] = new_floor_price
+
+    app.logger.info("create_response_dict")
+    app.logger.info(price_chart)
+    return price_chart
+
 
 def get_bulk_floor_price_api(bulk_contracts_list):
     headers = {
@@ -177,7 +192,7 @@ def get_assets_for_user():
     cursor = col.find(asset_query)
     assets_list = []
     for asset in cursor:
-        assets_list.append({"url": asset["url"], "price": asset["price"], "action": asset["action"]})
+        assets_list.append({"contract_id": asset["contract_id"], "price": asset["price"], "action": asset["action"]})
 
     return json.dumps(assets_list)
 
@@ -192,14 +207,14 @@ def delete_all_from_assets_col():
 @app.route('/delete_user_from_asset/', methods=['POST'])
 def delete_user_from_asset():
     user_email = request.json["user_email"]
-    asset_url = request.json["url"]
+    asset_url = request.json["contract_id"]
     app.logger.info("delete_user_from_asset: " + user_email + " " + asset_url)
 
     error_message = ""
 
     col = MongodbConnection.get_instance()["AssetsCol"]
 
-    asset_query = {"url": asset_url}
+    asset_query = {"contract_id": asset_url}
     retrieved_asset_from_db = col.find_one(asset_query)
 
     user_list = set(retrieved_asset_from_db["users"])
@@ -230,9 +245,9 @@ def create_mapped_assets_list(full_assets_list):
     bulk_contracts_list = []
     try:
         for asset in full_assets_list:
-            mapped_assets_list.append(Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
+            mapped_assets_list.append(Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
                                             asset["need_to_notify"], asset["action"]))
-            bulk_contracts_list.append(asset["url"])
+            bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
         app.logger.info("Exception in create_mapped_assets_list - " + str(e))
@@ -249,7 +264,7 @@ def add_user_to_asset(asset_url, user, mode):
 
         app.logger.info("add_user_to_asset - " + mode)
 
-        asset_query = {"url": asset_url}
+        asset_query = {"contract_id": asset_url}
         retrieved_asset_from_db = col.find_one(asset_query)
 
         app.logger.info(retrieved_asset_from_db)
@@ -289,12 +304,12 @@ def add_new_asset(col, new_asset):
 
 def update_asset_in_asset_col_db(asset_to_queue):
     try:
-        app.logger.info("Updating asset: " + asset_to_queue.url + " to price: "
+        app.logger.info("Updating asset: " + asset_to_queue.contract_id + " to price: "
                         + asset_to_queue.price + " Action: " + asset_to_queue.action)
     except:
         app.logger.info("update_asset_in_asset_col_db")
 
-    asset_query = {"url": asset_to_queue.url}
+    asset_query = {"contract_id": asset_to_queue.contract_id}
     new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action}}
 
     if asset_to_queue.action == SCRAPE_MODE_COLLECTIONS:
@@ -329,7 +344,7 @@ def scrape_asset_data(assets_to_queue, scraping_mode):
     for asset_to_queue in assets_to_queue:
         is_new_asset = (asset_to_queue.price == "new asset")
         try:
-            full_url = asset_to_queue.url
+            full_url = asset_to_queue.contract_id
             if scraping_mode == SCRAPE_MODE_ASSETS:
                 content_price, content_button = get_page_content(full_url)
                 # if getting 429 error, try again 3 times
