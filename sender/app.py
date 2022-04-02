@@ -6,6 +6,7 @@ import urllib.request
 from urllib.error import HTTPError
 
 import pika
+import requests
 import validators
 
 from AssetMetaData import Asset
@@ -61,10 +62,10 @@ def upsert_asset():
     user_email = request.json["user_email"]
     mode = request.json["mode"]
 
-    if not validate_input_url(asset_url):
-        return {"error": "error in input"}
-    if not validate_input_email(user_email):
-        return {"error": "error in input"}
+    # if not validate_input_url(asset_url):
+    #     return {"error": "error in input"}
+    # if not validate_input_email(user_email):
+    #     return {"error": "error in input"}
 
     app.logger.info("upsert_asset() %s %s", asset_url, user_email)
 
@@ -80,45 +81,76 @@ def start():
 
     try:
         while loop_flag:
-            # scrape assets price
-            assets_col = MongodbConnection.get_instance()["AssetsCol"]
-            full_assets_list = assets_col.find({})
-
-            mapped_assets_list = create_mapped_assets_list(full_assets_list)
-
-            app.logger.info("scraping " + str(len(mapped_assets_list) * 2) + " assets prices")
-            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_asset, SCRAPE_MODE_ASSETS)) for
-                       mapped_asset in mapped_assets_list]
-
-            [t.start() for t in threads]
-            [t.join() for t in threads]
-
-            app.logger.info("finished scrape assets...")
-            time.sleep(60)
-
             # scrape floor price
             collection_col = MongodbConnection.get_instance()["CollectionsCol"]
+            # cursor from mongodb
             full_collections_list = collection_col.find({})
 
-            mapped_floor_list = create_mapped_assets_list(full_collections_list)
+            mapped_floor_list, bulk_contracts_list = create_mapped_assets_list(full_collections_list)
+            app.logger.info("bulk_contracts_list")
+            app.logger.info(bulk_contracts_list)
 
-            app.logger.info("scraping " + str(len(mapped_floor_list) * 2) + " collections floor prices")
-            threads = [threading.Thread(target=scrape_asset_data, args=(mapped_floor, SCRAPE_MODE_COLLECTIONS)) for
-                       mapped_floor in mapped_floor_list]
+            response = get_bulk_floor_price_api(bulk_contracts_list)
+            if response["response"] != 200:
+                app.logger.info("error in api call")
+                time.sleep(30)
+                continue
 
-            [t.start() for t in threads]
-            [t.join() for t in threads]
+            app.logger.info("scraping " + str(len(mapped_floor_list)) + " collections floor prices")
+
+            compare_floor_price_response(response, mapped_floor_list)
 
             app.logger.info("finished loop, sleeping...")
-            time.sleep(60 * 5)
+            time.sleep(30)
 
     except Exception as e:
         app.logger.info("Exception in loop " + str(e))
 
     return "Finished loop!"
 
+def compare_floor_price_response(response, mapped_floor_list):
+    index = 0
+    for contract in response.json()["data"]:
+        try:
+            contract_id = contract["asset_contract"]
+            new_floor_price = contract["floor_price"][1]["floor_price"]
 
-# start loop
+            asset_to_compare = mapped_floor_list[index]
+
+            if asset_to_compare.price != new_floor_price:
+                asset_to_compare.need_to_notify = True
+                asset_to_compare.price = new_floor_price
+            else:
+                asset_to_compare.need_to_notify = False
+
+        except Exception as e:
+            app.logger.error("Except in scrape " + str(e) + " contract - " + contract_id)
+            asset_to_compare.error_message = str(e)
+        finally:
+            if asset_to_compare.need_to_notify:
+                update_asset_in_asset_col_db(asset_to_compare)
+                push_to_queue(asset_to_compare)
+
+            index = index + 1
+
+def get_bulk_floor_price_api(bulk_contracts_list):
+    headers = {
+        'x-api-key': str(os.environ.get('NFTBANK_API_KEY')),
+    }
+
+    json_data = {
+        'chain_id': 'ETHEREUM',
+        'asset_contracts':
+            bulk_contracts_list,
+    }
+
+    response = requests.post('https://api.nftbank.ai/estimates-v2/floor_price/bulk', headers=headers, json=json_data)
+    app.logger.info(response.json()["response"])
+
+    return response.json()
+
+
+# stop loop
 @app.route('/stop/', methods=['GET'])
 def stop():
     app.logger.info("stop looping")
@@ -148,11 +180,6 @@ def get_assets_for_user():
         assets_list.append({"url": asset["url"], "price": asset["price"], "action": asset["action"]})
 
     return json.dumps(assets_list)
-
-
-@app.route('/test/')
-def test():
-    return {"uv": "stam"}
 
 
 @app.route('/delete_all_from_assets_col/')
@@ -200,29 +227,16 @@ def delete_user_from_asset():
 # mapping db objects to AssetMetaData object and append to truncated list
 def create_mapped_assets_list(full_assets_list):
     mapped_assets_list = []
+    bulk_contracts_list = []
     try:
         for asset in full_assets_list:
-            sublist = []
+            mapped_assets_list.append(Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
+                                            asset["need_to_notify"], asset["action"]))
+            bulk_contracts_list.append(asset["url"])
 
-            asset_from_db = Asset(asset["url"], asset["users"], asset["price"], asset["error_message"],
-                                  asset["need_to_notify"], asset["action"])
-            sublist.append(asset_from_db)
-
-            if full_assets_list.alive:
-                next_asset = full_assets_list.next()
-            else:
-                mapped_assets_list.append(sublist)
-                break
-
-            asset_from_db = Asset(next_asset["url"], next_asset["users"], next_asset["price"],
-                                  next_asset["error_message"],
-                                  next_asset["need_to_notify"], next_asset["action"])
-            sublist.append(asset_from_db)
-
-            mapped_assets_list.append(sublist)
     except Exception as e:
         app.logger.info("Exception in create_mapped_assets_list - " + str(e))
-    return mapped_assets_list
+    return mapped_assets_list, bulk_contracts_list
 
 
 # check if asset url in db. if so, add user to this asset. if not, add new asset to db
