@@ -245,8 +245,9 @@ def create_mapped_assets_list(full_assets_list):
     bulk_contracts_list = []
     try:
         for asset in full_assets_list:
-            mapped_assets_list.append(Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
-                                            asset["need_to_notify"], asset["action"]))
+            mapped_assets_list.append(
+                Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
+                      asset["need_to_notify"], asset["action"]))
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
@@ -310,7 +311,8 @@ def update_asset_in_asset_col_db(asset_to_queue):
         app.logger.info("update_asset_in_asset_col_db")
 
     asset_query = {"contract_id": asset_to_queue.contract_id}
-    new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action}}
+    new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action,
+                           "need_to_notify": asset_to_queue.need_to_notify}}
 
     if asset_to_queue.action == SCRAPE_MODE_COLLECTIONS:
         col = MongodbConnection.get_instance()["CollectionsCol"]
