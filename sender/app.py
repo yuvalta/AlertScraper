@@ -79,8 +79,8 @@ def start():
     global loop_flag
     app.logger.info(loop_flag)
 
-    try:
-        while loop_flag:
+    while loop_flag:
+        try:
             # scrape floor price
             collection_col = MongodbConnection.get_instance()["CollectionsCol"]
             # cursor from mongodb
@@ -105,10 +105,11 @@ def start():
             compare_floor_price_with_chart(updated_price_chart, mapped_floor_list)
 
             app.logger.info("finished loop, sleeping...")
-            time.sleep(30)
+            time.sleep(90)
 
-    except Exception as e:
-        app.logger.info("Exception in loop " + str(e))
+        except Exception as e:
+            app.logger.info("Exception in loop " + str(e))
+            time.sleep(90)
 
     return "Finished loop!"
 
