@@ -1,4 +1,0 @@
-build:
-  docker:
-    worker: worker/Dockerfile
-    web: sender/Dockerfile
