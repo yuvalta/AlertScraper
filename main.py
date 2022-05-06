@@ -226,4 +226,5 @@ def update_asset_in_asset_col_db(asset_to_queue):
     col.update_one(asset_query, new_values)
 
 
+logging.info("Starting!")
 start()
