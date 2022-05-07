@@ -154,9 +154,14 @@ def create_mapped_assets_list(full_assets_list):
     bulk_contracts_list = []
     try:
         for asset in full_assets_list:
+            try:
+                collection_name = asset["name"]
+            except:
+                collection_name = None
+
             mapped_assets_list.append(
                 Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
-                      asset["need_to_notify"], asset["action"], asset["name"]))
+                      asset["need_to_notify"], asset["action"], collection_name))
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
