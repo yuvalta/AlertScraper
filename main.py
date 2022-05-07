@@ -10,7 +10,7 @@ from AssetMetaData import Asset
 from MongodbConnection import MongodbConnection
 from consts import SCRAPE_MODE_COLLECTIONS
 
-load_dotenv()
+
 
 
 # start loop
@@ -227,4 +227,5 @@ def update_asset_in_asset_col_db(asset_to_queue):
 
 
 logging.info("Starting!")
+load_dotenv()
 start()
