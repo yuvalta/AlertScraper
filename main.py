@@ -15,7 +15,7 @@ from consts import SCRAPE_MODE_COLLECTIONS
 
 # start loop
 def start():
-    logging.info("start looping")
+    print("start looping")
 
     while True:
         try:
@@ -25,16 +25,16 @@ def start():
             full_collections_list = collection_col.find({})
 
             mapped_floor_list, bulk_contracts_list = create_mapped_assets_list(full_collections_list)
-            logging.info("bulk_contracts_list")
-            logging.info(bulk_contracts_list)
+            print("bulk_contracts_list")
+            print(bulk_contracts_list)
 
             response = get_bulk_floor_price_api(bulk_contracts_list)
             if response["response"] != 200:
-                logging.info("error in api call")
+                print("error in api call")
                 time.sleep(30)
                 continue
 
-            logging.info("scraping " + str(len(mapped_floor_list)) + " collections floor prices")
+            print("scraping " + str(len(mapped_floor_list)) + " collections floor prices")
 
             # dict with contract id as Key and floor price as Value
             # this dict is helping me to compare price in more efficient way
@@ -42,11 +42,11 @@ def start():
 
             compare_floor_price_with_chart(updated_price_chart, mapped_floor_list)
 
-            logging.info("finished loop, sleeping...")
+            print("finished loop, sleeping...")
             time.sleep(90)
 
         except Exception as e:
-            logging.info("Exception in loop " + str(e))
+            print("Exception in loop " + str(e))
             time.sleep(90)
 
     return "Finished loop!"
@@ -55,18 +55,18 @@ def start():
 def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
     for asset_db in mapped_floor_list:
         try:
-            logging.info(asset_db.to_json())
+            print(asset_db.to_json())
             asset_db.action = SCRAPE_MODE_COLLECTIONS
             if asset_db.price != updated_price_chart[str(asset_db.contract_id).lower()]:
-                logging.info("in compare_floor_price_response - need to notify")
+                print("in compare_floor_price_response - need to notify")
                 asset_db.need_to_notify = True
                 asset_db.price = updated_price_chart[asset_db.contract_id]
             else:
-                logging.info("in compare_floor_price_response - no need to notify")
+                print("in compare_floor_price_response - no need to notify")
                 asset_db.need_to_notify = False
 
         except Exception as e:
-            logging.error("Except in scrape " + str(e) + " contract - " + asset_db.contract_id)
+            print("Except in scrape " + str(e) + " contract - " + asset_db.contract_id)
             asset_db.error_message = str(e)
         finally:
             if asset_db.need_to_notify:
@@ -81,8 +81,8 @@ def create_response_dict(response):
 
         price_chart[str(contract_id).lower()] = new_floor_price
 
-    logging.info("create_response_dict")
-    logging.info(price_chart)
+    print("create_response_dict")
+    print(price_chart)
     return price_chart
 
 
@@ -98,7 +98,7 @@ def get_bulk_floor_price_api(bulk_contracts_list):
     }
 
     response = requests.post('https://api.nftbank.ai/estimates-v2/floor_price/bulk', headers=headers, json=json_data)
-    logging.info(response.json()["response"])
+    print(response.json()["response"])
 
     return response.json()
 
@@ -112,7 +112,7 @@ def delete_all_from_assets_col():
 def delete_user_from_asset():
     user_email = request.json["user_email"]
     asset_url = request.json["contract_id"]
-    logging.info("delete_user_from_asset: " + user_email + " " + asset_url)
+    print("delete_user_from_asset: " + user_email + " " + asset_url)
 
     error_message = ""
 
@@ -155,7 +155,7 @@ def create_mapped_assets_list(full_assets_list):
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
-        logging.info("Exception in create_mapped_assets_list - " + str(e))
+        print("Exception in create_mapped_assets_list - " + str(e))
     return mapped_assets_list, bulk_contracts_list
 
 
@@ -167,25 +167,25 @@ def add_user_to_asset(asset_url, user, mode):
         else:
             col = MongodbConnection.get_instance()["AssetsCol"]
 
-        logging.info("add_user_to_asset - " + mode)
+        print("add_user_to_asset - " + mode)
 
         asset_query = {"contract_id": asset_url}
         retrieved_asset_from_db = col.find_one(asset_query)
 
-        logging.info(retrieved_asset_from_db)
+        print(retrieved_asset_from_db)
 
         if retrieved_asset_from_db is None:
-            logging.info("adding new " + mode)
+            print("adding new " + mode)
             new_asset_user_list = [user]
             add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False, ""))
             return {"response": "added new " + mode}
         else:
-            logging.info("updating existing " + mode)
+            print("updating existing " + mode)
             new_user_list = set(retrieved_asset_from_db["users"])
 
             if len(new_user_list) > 20:
                 error_msg = "Too many users on this url"
-                logging.info(error_msg)
+                print(error_msg)
                 return {"response": "", "error": error_msg}
 
             if user in new_user_list:
@@ -198,21 +198,21 @@ def add_user_to_asset(asset_url, user, mode):
             return {"response": "updating existing " + mode}
 
     except Exception as e:
-        logging.info(str(e))
+        print(str(e))
         return str(e)
 
 
 def add_new_asset(col, new_asset):
-    logging.info("add_new_asset: " + new_asset.to_json())
+    print("add_new_asset: " + new_asset.to_json())
     col.insert_one(new_asset.__dict__)
 
 
 def update_asset_in_asset_col_db(asset_to_queue):
     try:
-        logging.info("Updating asset: " + asset_to_queue.contract_id + " to price: "
+        print("Updating asset: " + asset_to_queue.contract_id + " to price: "
                      + asset_to_queue.price + " Action: " + asset_to_queue.action)
     except:
-        logging.info("update_asset_in_asset_col_db")
+        print("update_asset_in_asset_col_db")
 
     asset_query = {"contract_id": asset_to_queue.contract_id}
     new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action,
@@ -226,6 +226,6 @@ def update_asset_in_asset_col_db(asset_to_queue):
     col.update_one(asset_query, new_values)
 
 
-logging.info("Starting!")
+print("Starting!")
 load_dotenv()
 start()
