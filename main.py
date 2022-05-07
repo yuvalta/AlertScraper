@@ -11,6 +11,8 @@ from MongodbConnection import MongodbConnection
 from consts import SCRAPE_MODE_COLLECTIONS
 
 
+
+
 # start loop
 def start():
     print("start looping")
@@ -36,9 +38,9 @@ def start():
 
             # dict with contract id as Key and floor price as Value
             # this dict is helping me to compare price in more efficient way
-            updated_price_chart, collection_name = create_response_dict(response)
+            updated_price_chart = create_response_dict(response)
 
-            compare_floor_price_with_chart(updated_price_chart, mapped_floor_list, collection_name)
+            compare_floor_price_with_chart(updated_price_chart, mapped_floor_list)
 
             print("finished loop, sleeping...")
             time.sleep(90)
@@ -50,13 +52,11 @@ def start():
     return "Finished loop!"
 
 
-def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list, collection_name):
+def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
     for asset_db in mapped_floor_list:
         try:
             print(asset_db.to_json())
             asset_db.action = SCRAPE_MODE_COLLECTIONS
-            asset_db.name = str(collection_name)
-
             if asset_db.price != updated_price_chart[str(asset_db.contract_id).lower()]:
                 print("in compare_floor_price_response - need to notify")
                 asset_db.need_to_notify = True
@@ -79,16 +79,11 @@ def create_response_dict(response):
         contract_id = contract["asset_contract"]
         new_floor_price = contract["floor_price"][1]["floor_price"]
 
-        try:
-            collection_name = contract["dapp_info"]["name"]
-        except:
-            collection_name = None
-
         price_chart[str(contract_id).lower()] = new_floor_price
 
     print("create_response_dict")
     print(price_chart)
-    return price_chart, collection_name
+    return price_chart
 
 
 def get_bulk_floor_price_api(bulk_contracts_list):
@@ -154,14 +149,9 @@ def create_mapped_assets_list(full_assets_list):
     bulk_contracts_list = []
     try:
         for asset in full_assets_list:
-            try:
-                collection_name = asset["name"]
-            except:
-                collection_name = None
-
             mapped_assets_list.append(
                 Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
-                      asset["need_to_notify"], asset["action"], collection_name))
+                      asset["need_to_notify"], asset["action"]))
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
@@ -220,7 +210,7 @@ def add_new_asset(col, new_asset):
 def update_asset_in_asset_col_db(asset_to_queue):
     try:
         print("Updating asset: " + asset_to_queue.contract_id + " to price: "
-              + asset_to_queue.price + " Action: " + asset_to_queue.action)
+                     + asset_to_queue.price + " Action: " + asset_to_queue.action)
     except:
         print("update_asset_in_asset_col_db")
 
