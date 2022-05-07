@@ -156,7 +156,7 @@ def create_mapped_assets_list(full_assets_list):
         for asset in full_assets_list:
             mapped_assets_list.append(
                 Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
-                      asset["need_to_notify"], asset["action"]))
+                      asset["need_to_notify"], asset["action"], asset["name"]))
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
