@@ -8,6 +8,7 @@ class Asset:
     error_message = None
     need_to_notify = False
     action = None
+    name = None
 
     def __init__(self, contract_id):
         self.contract_id = contract_id
@@ -16,13 +17,14 @@ class Asset:
         self.contract_id = contract_id
         self.users = user_list
 
-    def __init__(self, contract_id, user_list, price, error_message, need_to_notify, action):
+    def __init__(self, contract_id, user_list, price, error_message, need_to_notify, action, name):
         self.contract_id = contract_id
         self.users = user_list
         self.price = price
         self.error_message = error_message
         self.need_to_notify = need_to_notify
         self.action = action
+        self.name = name
 
     def add_user(self, user):
         self.users.append(user)
