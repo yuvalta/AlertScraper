@@ -8,6 +8,8 @@ class Asset:
     error_message = None
     need_to_notify = False
     action = None
+    name = None
+    price_history = []
 
     def __init__(self, contract_id):
         self.contract_id = contract_id
@@ -16,16 +18,15 @@ class Asset:
         self.contract_id = contract_id
         self.users = user_list
 
-    def __init__(self, contract_id, user_list, price, error_message, need_to_notify, action):
+    def __init__(self, contract_id, user_list, price, error_message, need_to_notify, action, name, price_history):
         self.contract_id = contract_id
         self.users = user_list
         self.price = price
         self.error_message = error_message
         self.need_to_notify = need_to_notify
         self.action = action
-
-    def add_user(self, user):
-        self.users.append(user)
+        self.name = name
+        self.price_history = price_history
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__,

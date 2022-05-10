@@ -11,8 +11,6 @@ from MongodbConnection import MongodbConnection
 from consts import SCRAPE_MODE_COLLECTIONS
 
 
-
-
 # start loop
 def start():
     print("start looping")
@@ -61,6 +59,11 @@ def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
                 print("in compare_floor_price_response - need to notify")
                 asset_db.need_to_notify = True
                 asset_db.price = updated_price_chart[asset_db.contract_id]
+                asset_db.price_history.append(asset_db.price)
+
+                # keep only 10 last records of prices
+                if len(asset_db.price_history) > 10:
+                    asset_db.price_history.pop(0)
             else:
                 print("in compare_floor_price_response - no need to notify")
                 asset_db.need_to_notify = False
@@ -151,7 +154,7 @@ def create_mapped_assets_list(full_assets_list):
         for asset in full_assets_list:
             mapped_assets_list.append(
                 Asset(asset["contract_id"], asset["users"], asset["price"], asset["error_message"],
-                      asset["need_to_notify"], asset["action"]))
+                      asset["need_to_notify"], asset["action"], asset["name"], asset["price_history"]))
             bulk_contracts_list.append(asset["contract_id"])
 
     except Exception as e:
@@ -159,64 +162,18 @@ def create_mapped_assets_list(full_assets_list):
     return mapped_assets_list, bulk_contracts_list
 
 
-# check if asset url in db. if so, add user to this asset. if not, add new asset to db
-def add_user_to_asset(asset_url, user, mode):
-    try:
-        if mode == SCRAPE_MODE_COLLECTIONS:
-            col = MongodbConnection.get_instance()["CollectionsCol"]
-        else:
-            col = MongodbConnection.get_instance()["AssetsCol"]
-
-        print("add_user_to_asset - " + mode)
-
-        asset_query = {"contract_id": asset_url}
-        retrieved_asset_from_db = col.find_one(asset_query)
-
-        print(retrieved_asset_from_db)
-
-        if retrieved_asset_from_db is None:
-            print("adding new " + mode)
-            new_asset_user_list = [user]
-            add_new_asset(col, Asset(asset_url, new_asset_user_list, "new asset", "", False, ""))
-            return {"response": "added new " + mode}
-        else:
-            print("updating existing " + mode)
-            new_user_list = set(retrieved_asset_from_db["users"])
-
-            if len(new_user_list) > 20:
-                error_msg = "Too many users on this url"
-                print(error_msg)
-                return {"response": "", "error": error_msg}
-
-            if user in new_user_list:
-                return {"response": "", "error": "User already Exist in " + mode}
-
-            new_user_list.add(user)
-
-            new_values = {"$set": {"users": list(new_user_list)}}
-            col.update_one(asset_query, new_values)
-            return {"response": "updating existing " + mode}
-
-    except Exception as e:
-        print(str(e))
-        return str(e)
-
-
-def add_new_asset(col, new_asset):
-    print("add_new_asset: " + new_asset.to_json())
-    col.insert_one(new_asset.__dict__)
-
-
 def update_asset_in_asset_col_db(asset_to_queue):
     try:
         print("Updating asset: " + asset_to_queue.contract_id + " to price: "
-                     + asset_to_queue.price + " Action: " + asset_to_queue.action)
+              + asset_to_queue.price + " Action: " + asset_to_queue.action)
     except:
         print("update_asset_in_asset_col_db")
 
     asset_query = {"contract_id": asset_to_queue.contract_id}
-    new_values = {"$set": {"price": asset_to_queue.price, "action": asset_to_queue.action,
-                           "need_to_notify": asset_to_queue.need_to_notify}}
+    new_values = {"$set": {"price": asset_to_queue.price,
+                           "action": asset_to_queue.action,
+                           "need_to_notify": asset_to_queue.need_to_notify,
+                           "price_history": asset_to_queue.price_history}}
 
     if asset_to_queue.action == SCRAPE_MODE_COLLECTIONS:
         col = MongodbConnection.get_instance()["CollectionsCol"]
