@@ -55,7 +55,7 @@ def start():
 def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
     for asset_db in mapped_floor_list:
         try:
-            print(asset_db.to_json())
+            # print(asset_db.to_json())
             asset_db.action = SCRAPE_MODE_COLLECTIONS
             if asset_db.price != updated_price_chart[str(asset_db.contract_id).lower()]:
                 print("in compare_floor_price_response - need to notify")
