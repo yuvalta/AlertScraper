@@ -10,7 +10,7 @@ from AssetMetaData import Asset
 from MongodbConnection import MongodbConnection
 from consts import SCRAPE_MODE_COLLECTIONS
 
-MAX_HISTORY_PRICES = 20
+MAX_HISTORY_PRICES = 50
 
 
 # start loop
