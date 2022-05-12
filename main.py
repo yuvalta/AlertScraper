@@ -10,6 +10,8 @@ from AssetMetaData import Asset
 from MongodbConnection import MongodbConnection
 from consts import SCRAPE_MODE_COLLECTIONS
 
+MAX_HISTORY_PRICES = 20
+
 
 # start loop
 def start():
@@ -62,7 +64,7 @@ def compare_floor_price_with_chart(updated_price_chart, mapped_floor_list):
                 asset_db.price_history.append(asset_db.price)
 
                 # keep only 10 last records of prices
-                if len(asset_db.price_history) > 10:
+                if len(asset_db.price_history) > MAX_HISTORY_PRICES:
                     asset_db.price_history.pop(0)
             else:
                 print("in compare_floor_price_response - no need to notify")
